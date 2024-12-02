@@ -12,10 +12,10 @@
         <form id="loginForm">
             <label for="username">Username:</label>
             <input type="text" id="username" name="username" required>
-            
+
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required>
-            
+
             <button type="submit">Login</button>
         </form>
         <p>Don't have an account? <a href="register.html">Register here</a>.</p>
@@ -27,11 +27,10 @@
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
 
-            // Send the plaintext password, no hashing needed here
             const response = await fetch("/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password })  // Send as plaintext
+                body: JSON.stringify({ username, password })
             });
 
             const result = await response.json();

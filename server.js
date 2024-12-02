@@ -1,31 +1,29 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const sqlite3 = require("sqlite3").verbose();
-const crypto = require("crypto");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const express = require('express');
+const bodyParser = require('body-parser');
+const sqlite3 = require('sqlite3').verbose();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = 3000;
-const SECRET_KEY = "your-secret-key"; // Store in environment variables in production
-const AES_KEY = crypto.randomBytes(32); // 256-bit AES key
-const AES_IV = crypto.randomBytes(16);  // 16-byte IV
+const SECRET_KEY = 'your-secret-key'; // Store in environment variables in production
 
 // Database setup
-const db = new sqlite3.Database("diehlDB.sqlite", (err) => {
+const db = new sqlite3.Database('diehlDB.sqlite', (err) => {
     if (err) {
-        console.error("Error opening database: ", err.message);
+        console.error('Error opening database: ', err.message);
         process.exit(1);
-    } else {
-        console.log("Connected to the database.");
     }
+    console.log('Connected to the database.');
 });
 
 // Middleware
 app.use(bodyParser.json());
-app.use(express.static("public"));
+app.use(cookieParser());
+app.use(express.static('public'));  // Serve static files (like login.html)
 
-// Utility Functions
+// Utility functions
 async function hashPassword(password) {
     const saltRounds = 10;
     return bcrypt.hash(password, saltRounds);
@@ -36,158 +34,156 @@ async function verifyPassword(inputPassword, storedHash) {
 }
 
 function generateToken(user) {
-    return jwt.sign({ id: user.id, usergroup: user.usergroup }, SECRET_KEY, { expiresIn: "1h" });
+    return jwt.sign({ id: user.id, usergroup: user.usergroup }, SECRET_KEY, { expiresIn: '1h' });
 }
 
 function authenticateToken(req, res, next) {
-    const token = req.headers["authorization"];
+    const token = req.cookies.token; // Retrieve token from cookie
+
     if (!token) {
-        console.log("Token missing");
-        return res.status(401).json({ message: "Token missing" });
+        return res.status(401).json({ message: 'Token missing or invalid' });
     }
 
-    // Verify the token
     jwt.verify(token, SECRET_KEY, (err, user) => {
         if (err) {
-            console.log("Invalid token:", err);
-            return res.status(403).json({ message: "Forbidden" });  // Return Forbidden if token is invalid
+            return res.status(403).json({ message: 'Forbidden' });
         }
-        req.user = user;  // Attach user info to request
+        req.user = user;
         next();
     });
 }
 
-function encryptAttribute(attribute) {
-    const cipher = crypto.createCipheriv("aes-256-cbc", AES_KEY, AES_IV);
-    let encrypted = cipher.update(attribute.toString(), "utf8", "hex");
-    encrypted += cipher.final("hex");
-    return encrypted;
-}
-
-function decryptAttribute(encrypted) {
-    const decipher = crypto.createDecipheriv("aes-256-cbc", AES_KEY, AES_IV);
-    let decrypted = decipher.update(encrypted, "hex", "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
-}
-
-function computeDataHash(record) {
-    const dataString = `${record.firstname}${record.lastname}${record.gender}${record.age}${record.weight}${record.height}${record.history}`;
-    return crypto.createHash("sha256").update(dataString).digest("hex");
-}
-
 // Routes
-// Registration
-app.post("/register", async (req, res) => {
-    const { username, password, usergroup } = req.body;
 
-    if (!["H", "R"].includes(usergroup)) {
-        return res.status(400).json({ message: "Invalid usergroup" });
-    }
+// Registration (For reference, not used in the client)
+app.post('/register', async (req, res) => {
+    const { username, password, usergroup } = req.body;
 
     const hashedPassword = await hashPassword(password);
 
-    db.run(
-        "INSERT INTO users (username, password, usergroup) VALUES (?, ?, ?)",
-        [username, hashedPassword, usergroup],
-        (err) => {
-            if (err) return res.status(500).json({ message: "Error registering user" });
-            res.json({ message: "User registered successfully" });
-        }
-    );
+    db.run('INSERT INTO users (username, password, usergroup) VALUES (?, ?, ?)', [username, hashedPassword, usergroup], (err) => {
+        if (err) return res.status(500).json({ message: 'Error registering user' });
+        res.json({ message: 'User registered successfully' });
+    });
 });
 
-// Login
-app.post("/login", (req, res) => {
+// Login Route
+app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
-    // Fetch the user from the database
-    db.get("SELECT * FROM users WHERE username = ?", [username], async (err, user) => {
-        if (err) {
-            return res.status(500).json({ message: "Error during login" });
-        }
-        if (!user) {
-            return res.status(400).json({ message: "Invalid credentials" });
-        }
+    // Fetch user from database
+    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
+        if (err) return res.status(500).json({ message: 'Error during login' });
+        if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
-        // Compare the input password (plaintext) with the stored hashed password
-        const passwordMatch = await verifyPassword(password, user.password); // user.password is the hashed password
-        if (!passwordMatch) {
-            return res.status(400).json({ message: "Invalid credentials" });
-        }
+        // Verify password
+        const passwordMatch = await verifyPassword(password, user.password);
+        if (!passwordMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
-        // Generate the token if the password matches
+        // Generate token and set in cookie
         const token = generateToken(user);
-        res.json({ message: "Login successful", token });
-    });
-});
-
-
-// Query Health Data
-app.get("/health", authenticateToken, (req, res) => {
-    const fields = req.user.usergroup === "R" ? "id, gender, age, weight, height, history" : "*";
-    db.all(`SELECT ${fields} FROM health`, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-
-        // Decrypt sensitive attributes if necessary
-        rows = rows.map((row) => ({
-            ...row,
-            gender: decryptAttribute(row.gender),
-            age: decryptAttribute(row.age.toString()),
-        }));
-
-        res.json(rows);
-    });
-});
-
-// Add Health Data (Only Group H)
-app.post("/health", authenticateToken, (req, res) => {
-    if (req.user.usergroup !== "H") return res.status(403).json({ message: "Access denied" });
-
-    const { firstname, lastname, gender, age, weight, height, history } = req.body;
-    const encryptedGender = encryptAttribute(gender.toString());
-    const encryptedAge = encryptAttribute(age.toString());
-
-    const record = { firstname, lastname, gender, age, weight, height, history };
-    const dataHash = computeDataHash(record);
-
-    db.run(
-        "INSERT INTO health (firstname, lastname, gender, age, weight, height, history, data_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [firstname, lastname, encryptedGender, encryptedAge, weight, height, history, dataHash],
-        (err) => {
-            if (err) return res.status(500).json({ message: "Database error" });
-            res.json({ message: "Data added successfully" });
-        }
-    );
-});
-
-// Endpoint to fetch dashboard data
-app.get("/dashboard/data", authenticateToken, (req, res) => {
-    const usergroup = req.user.usergroup; // 'H' or 'R'
-
-    // Query health data
-    db.all("SELECT * FROM health", [], (err, rows) => {
-        if (err) {
-            console.error("Error querying health data:", err.message);
-            return res.status(500).json({ message: "Failed to fetch data" });
-        }
-
-        // Filter data based on usergroup
-        const filteredData = rows.map((row) => {
-            if (usergroup === "R") {
-                // Remove restricted fields for group R (e.g., personal info)
-                delete row.firstname;
-                delete row.lastname;
-            }
-            return row;
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: false, // Set to true in production for HTTPS
+            maxAge: 3600000, // 1 hour
+            sameSite: 'Strict',
         });
 
-        res.json({ usergroup, data: filteredData });
+        res.json({ message: 'Login successful' });
     });
 });
 
+app.get('/dashboard/data', authenticateToken, (req, res) => {
+    let query;
+    const params = [];
+
+    if (isGroupH(req)) {
+        // Group H can access all fields
+        query = `SELECT firstname, lastname, gender, age, weight, height, history FROM health`;
+    } else if (isGroupR(req)) {
+        // Group R cannot access firstname and lastname
+        query = `SELECT gender, age, weight, height, history FROM health`;
+    } else {
+        return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('Error querying health data:', err.message);
+            return res.status(500).json({ message: 'Failed to fetch data.' });
+        }
+
+        // Convert gender to M/F
+        const formattedRows = rows.map(row => ({
+            ...row,
+            gender: row.gender === 1 ? 'M' : row.gender === 0 ? 'F' : 'Unknown',
+        }));
+
+        res.json(formattedRows);
+    });
+});
+
+
+app.post('/dashboard/query', authenticateToken, (req, res) => {
+    const { field, value } = req.body;
+
+    const allowedFieldsForAllGroups = ["gender", "age", "weight", "height", "history"];
+    const allowedFieldsForGroupH = ["firstname", "lastname", ...allowedFieldsForAllGroups];
+
+    // Determine allowed fields based on the user's group
+    const allowedFields = isGroupH(req) ? allowedFieldsForGroupH : allowedFieldsForAllGroups;
+
+    // Validate field
+    if (!allowedFields.includes(field)) {
+        return res.status(400).json({ message: 'Invalid field for query.' });
+    }
+
+    // Construct query
+    const fieldsToSelect = isGroupH(req)
+        ? `firstname, lastname, gender, age, weight, height, history`
+        : `gender, age, weight, height, history`;
+
+    const query = `SELECT ${fieldsToSelect} FROM health WHERE ${field} = ?`;
+
+    db.all(query, [value], (err, rows) => {
+        if (err) {
+            console.error('Error querying health data:', err.message);
+            return res.status(500).json({ message: 'Failed to fetch data.' });
+        }
+
+        // Convert gender to M/F
+        const formattedRows = rows.map(row => ({
+            ...row,
+            gender: row.gender === 1 ? 'M' : row.gender === 0 ? 'F' : 'Unknown',
+        }));
+
+        res.json(formattedRows);
+    });
+});
+
+app.post('/dashboard/add', authenticateToken, (req, res) => {
+    if (!isGroupH(req)) {
+        return res.status(403).json({ message: 'Only users from group H can add data.' });
+    }
+
+    const { firstname, lastname, gender, age, weight, height, history } = req.body;
+
+    if (!firstname || !lastname || gender == null || !age || !weight || !height || !history) {
+        return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    const query = `INSERT INTO health (firstname, lastname, gender, age, weight, height, history) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
+    db.run(query, [firstname, lastname, gender, age, weight, height, history], function (err) {
+        if (err) {
+            console.error('Error adding data:', err.message);
+            return res.status(500).json({ message: 'Failed to add data.' });
+        }
+        res.json({ message: 'Data added successfully.', id: this.lastID });
+    });
+});
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });

@@ -9,86 +9,85 @@
 <body>
     <div class="container">
         <h2>Dashboard</h2>
+        <p id="userInfo">Loading user data...</p>
+
+        <!-- Query Form -->
+        <form id="queryForm">
+            <label for="field">Search By:</label>
+            <select id="field" name="field" required>
+                <option value="firstname">First Name</option>
+                <option value="lastname">Last Name</option>
+                <option value="gender">Gender (1 for M, 0 for F)</option>
+                <option value="age">Age</option>
+                <option value="weight">Weight</option>
+                <option value="height">Height</option>
+                <option value="history">History</option>
+            </select>
+
+            <label for="value">Value:</label>
+            <input type="text" id="value" name="value" required>
+
+            <button type="submit">Search</button>
+        </form>
+
+        <table id="healthData" border="1">
+            <thead>
+                <tr>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Gender</th>
+                    <th>Age</th>
+                    <th>Weight</th>
+                    <th>Height</th>
+                    <th>History</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Query results will go here -->
+            </tbody>
+        </table>
         <button id="logoutBtn">Logout</button>
-        <h3>Your Health Data</h3>
-        <div id="dataContainer"></div>
     </div>
 
     <script>
-        const token = localStorage.getItem("token");
-        if (!token) {
-            alert("You must be logged in to view this page.");
-            window.location.href = "login.html";
-        }
+        // Fetch and display query results
+        async function handleQuery(e) {
+            e.preventDefault();
+            const field = document.getElementById("field").value;
+            const value = document.getElementById("value").value;
 
-        document.getElementById("logoutBtn").addEventListener("click", () => {
-            localStorage.removeItem("token");
-            window.location.href = "login.html";
-        });
-
-        async function fetchData() {
-            const token = localStorage.getItem("token"); // Ensure the token is stored properly
-
-            // Check if the token is present
-            if (!token) {
-                console.log("No token found");
-                return;
-            }
-
-            const response = await fetch("/dashboard/data", {
-                headers: { "Authorization": `Bearer ${token}` }, // Send the token with the request
+            const response = await fetch("/dashboard/query", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include", // Send cookies with the request
+                body: JSON.stringify({ field, value }),
             });
 
-            const textResponse = await response.text();
-            console.log("Response Text:", textResponse);  // Log the raw response
+            const result = await response.json();
+            const table = document.getElementById("healthData").getElementsByTagName('tbody')[0];
+            table.innerHTML = ""; // Clear previous results
 
-            try {
-                const result = JSON.parse(textResponse);  // Try parsing as JSON
-
-                if (response.ok) {
-                    const dataContainer = document.getElementById("dataContainer");
-                    console.log("Fetched Data:", result);
-
-                    // Render the data based on usergroup
-                    if (result.data.length === 0) {
-                        dataContainer.innerHTML = "<p>No data available.</p>";
-                    } else {
-                        result.data.forEach((row) => {
-                            const div = document.createElement("div");
-                            if (result.usergroup === "H") {
-                                div.innerHTML = `
-                                    <p><strong>First Name:</strong> ${row.firstname}</p>
-                                    <p><strong>Last Name:</strong> ${row.lastname}</p>
-                                    <p><strong>Gender:</strong> ${row.gender}</p>
-                                    <p><strong>Age:</strong> ${row.age}</p>
-                                    <p><strong>Weight:</strong> ${row.weight}</p>
-                                    <p><strong>Height:</strong> ${row.height}</p>
-                                    <p><strong>History:</strong> ${row.history}</p>
-                                    <p><strong>Data Hash:</strong> ${row.data_hash}</p>
-                                `;
-                            } else if (result.usergroup === "R") {
-                                div.innerHTML = `
-                                    <p><strong>Age:</strong> ${row.age}</p>
-                                    <p><strong>Weight:</strong> ${row.weight}</p>
-                                    <p><strong>Height:</strong> ${row.height}</p>
-                                    <p><strong>History:</strong> ${row.history}</p>
-                                    <p><strong>Data Hash:</strong> ${row.data_hash}</p>
-                                `;
-                            }
-                            dataContainer.appendChild(div);
-                        });
-                    }
-                } else {
-                    dataContainer.innerHTML = `<p>${textResponse}</p>`;  // Display the error message
-                }
-            } catch (error) {
-                console.error("Error parsing response:", error);
-                const dataContainer = document.getElementById("dataContainer");
-                dataContainer.innerHTML = "<p>Failed to load data. Please try again later.</p>";
+            if (response.ok) {
+                result.forEach(row => {
+                    const newRow = table.insertRow();
+                    Object.values(row).forEach(value => {
+                        const cell = newRow.insertCell();
+                        cell.textContent = value;
+                    });
+                });
+            } else {
+                alert(result.message);
             }
         }
 
-        fetchData();
+        // Logout function
+        document.getElementById("logoutBtn").addEventListener("click", () => {
+            document.cookie = "token=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/"; // Clear the cookie
+            window.location.href = "login.html"; // Redirect to login page
+        });
+
+        // Attach query handler
+        document.getElementById("queryForm").addEventListener("submit", handleQuery);
     </script>
 </body>
 </html>
