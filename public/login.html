@@ -27,17 +27,18 @@
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
 
+            // Send the plaintext password, no hashing needed here
             const response = await fetch("/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ username, password })  // Send as plaintext
             });
 
             const result = await response.json();
             alert(result.message);
 
             if (response.ok) {
-                window.location.href = "welcome.html";
+                window.location.href = "dashboard.html"; // Redirect to dashboard if login is successful
             }
         });
     </script>

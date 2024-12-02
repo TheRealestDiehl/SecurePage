@@ -15,6 +15,12 @@
             
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required>
+
+            <label for="usergroup">Group:</label>
+            <select id="usergroup" name="usergroup" required>
+                <option value="H">Health Provider (H)</option>
+                <option value="R">Researcher (R)</option>
+            </select>
             
             <button type="submit">Register</button>
         </form>
@@ -26,19 +32,16 @@
             e.preventDefault();
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
+            const usergroup = document.getElementById("usergroup").value;
 
             const response = await fetch("/register", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ username, password, usergroup }),
             });
 
             const result = await response.json();
             alert(result.message);
-
-            if (response.ok) {
-                window.location.href = "login.html";
-            }
         });
     </script>
 </body>

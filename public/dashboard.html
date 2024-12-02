@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Dashboard</h2>
+        <button id="logoutBtn">Logout</button>
+        <h3>Your Health Data</h3>
+        <div id="dataContainer"></div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem("token");
+        if (!token) {
+            alert("You must be logged in to view this page.");
+            window.location.href = "login.html";
+        }
+
+        document.getElementById("logoutBtn").addEventListener("click", () => {
+            localStorage.removeItem("token");
+            window.location.href = "login.html";
+        });
+
+        async function fetchData() {
+            const token = localStorage.getItem("token"); // Ensure the token is stored properly
+
+            // Check if the token is present
+            if (!token) {
+                console.log("No token found");
+                return;
+            }
+
+            const response = await fetch("/dashboard/data", {
+                headers: { "Authorization": `Bearer ${token}` }, // Send the token with the request
+            });
+
+            const textResponse = await response.text();
+            console.log("Response Text:", textResponse);  // Log the raw response
+
+            try {
+                const result = JSON.parse(textResponse);  // Try parsing as JSON
+
+                if (response.ok) {
+                    const dataContainer = document.getElementById("dataContainer");
+                    console.log("Fetched Data:", result);
+
+                    // Render the data based on usergroup
+                    if (result.data.length === 0) {
+                        dataContainer.innerHTML = "<p>No data available.</p>";
+                    } else {
+                        result.data.forEach((row) => {
+                            const div = document.createElement("div");
+                            if (result.usergroup === "H") {
+                                div.innerHTML = `
+                                    <p><strong>First Name:</strong> ${row.firstname}</p>
+                                    <p><strong>Last Name:</strong> ${row.lastname}</p>
+                                    <p><strong>Gender:</strong> ${row.gender}</p>
+                                    <p><strong>Age:</strong> ${row.age}</p>
+                                    <p><strong>Weight:</strong> ${row.weight}</p>
+                                    <p><strong>Height:</strong> ${row.height}</p>
+                                    <p><strong>History:</strong> ${row.history}</p>
+                                    <p><strong>Data Hash:</strong> ${row.data_hash}</p>
+                                `;
+                            } else if (result.usergroup === "R") {
+                                div.innerHTML = `
+                                    <p><strong>Age:</strong> ${row.age}</p>
+                                    <p><strong>Weight:</strong> ${row.weight}</p>
+                                    <p><strong>Height:</strong> ${row.height}</p>
+                                    <p><strong>History:</strong> ${row.history}</p>
+                                    <p><strong>Data Hash:</strong> ${row.data_hash}</p>
+                                `;
+                            }
+                            dataContainer.appendChild(div);
+                        });
+                    }
+                } else {
+                    dataContainer.innerHTML = `<p>${textResponse}</p>`;  // Display the error message
+                }
+            } catch (error) {
+                console.error("Error parsing response:", error);
+                const dataContainer = document.getElementById("dataContainer");
+                dataContainer.innerHTML = "<p>Failed to load data. Please try again later.</p>";
+            }
+        }
+
+        fetchData();
+    </script>
+</body>
+</html>
